@@ -2,3 +2,4 @@
 env
 .DS_Store
 output
+prompt.pickle
