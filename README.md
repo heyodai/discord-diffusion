@@ -1,2 +1,9 @@
-# discord-diffusion
-Discord bot to act as interface to Stable Diffusion running on Mac Mini
+# Discord Diffusion Bot
+
+This is a bot that allows you to interface with StableDiffusion via Discord. The script and the StableDiffusion model are both running from an M2 Mac Mini in my basement.
+
+## Future Improvements
+
+- [ ] Add an exit message
+- [ ] Add a queue system
+- [ ] Add private channels
