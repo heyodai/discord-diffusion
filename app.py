@@ -24,14 +24,18 @@ def main():
     async def on_ready():
         print(f'We have logged in as {client.user}')
 
-        # TODO: send a message to the status channel
         # TODO: send a logoff message when the bot is shut down
 
-        # embed = discord.Embed()
-        # embed.set_image(url='attachment://bender.gif')
-        
-        # channel = client.get_channel(STATUS_CHANNEL)
-        # await channel.send(content='Bot is online.', embed=embed)
+        # Let's send a message to the status channel to let everyone know the bot is online
+        # we'll also send a gif of Bender to celebrate
+        bender = open('gifs/bender.gif', 'rb')
+        bender = discord.File(bender, filename='bender.gif')
+
+        embed = discord.Embed()
+        embed.set_image(url='attachment://bender.gif')
+
+        channel = client.get_channel(int(STATUS_CHANNEL))
+        await channel.send(content='Bot is online.', file=bender, embed=embed)
 
 
     @client.event
@@ -55,15 +59,25 @@ def main():
             """
             await message.channel.send(msg)
         
-        if message.content.startswith('$draw'):
-            msg = message.content[6:]
-            if msg == '':
+        if message.content.startswith('$draw') or message.content.startswith('$redraw'):
+            # Get the prompt from the message
+            is_redraw = message.content.startswith('$redraw')
+            msg = message.content[6:] if not is_redraw else message.content[8:]
+
+            # Guard clauses for bad input
+            if msg == '' and not is_redraw:
                 await message.channel.send(f'Please provide a prompt.')
+                return
+            if msg != '' and is_redraw:
+                await message.channel.send(f'Please do not provide a prompt when using $redraw.')
                 return
             
             # pickle the prompt for use with the $redraw command
             with open('prompt.pickle', 'wb') as f:
                 pickle.dump(msg, f)
+            if is_redraw:
+                with open('prompt.pickle', 'rb') as f:
+                    msg = pickle.load(f)
 
             # TODO: send estimated time to generate
             filename, time_elapsed = make_image(pipe, msg)
@@ -83,6 +97,13 @@ def main():
 
             variation = enhance_prompt(msg, tokenizer, model)
             await message.channel.send(f'New prompt: {variation}')
+
+        if message.content.startswith('$wait'):
+            await message.channel.send(f'¯\_(ツ)_/¯')
+
+    @client.event
+    async def on_disconnect():
+        print('Bot disconnected.')
 
     client.run(TOKEN)
 
