@@ -3,9 +3,14 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 import time
 import discord
 import os
+import pickle
 
-TOKEN = os.environ['GITHUB_BOT_TOKEN']
+TOKEN = os.environ['BOT_TOKEN']
+STATUS_CHANNEL = os.environ['STATUS_CHANNEL_ID']
 ALLOW_NSFW = True
+NUM_INFERENCE_STEPS = 1
+HEIGHT = 512
+WIDTH = 512
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -19,24 +24,57 @@ def main():
     async def on_ready():
         print(f'We have logged in as {client.user}')
 
+        # TODO: send a message to the status channel
+        # TODO: send a logoff message when the bot is shut down
+
+        # embed = discord.Embed()
+        # embed.set_image(url='attachment://bender.gif')
+        
+        # channel = client.get_channel(STATUS_CHANNEL)
+        # await channel.send(content='Bot is online.', embed=embed)
+
+
     @client.event
     async def on_message(message):
         if message.author == client.user:
             # don't respond to ourselves
             return
 
-        if message.content.startswith('$art'):
-            # get the message after the command
-            msg = message.content[5:]
-            # await message.channel.send(f'Hello {msg}!')
+        if message.content.startswith('$ping'):
+            await message.channel.send('🏓 Pong! {0.author.mention}'.format(message))
 
-            # embed a local image (test.png)
+        if message.content.startswith('$help'):
+            msg = """
+            Available commands:
+            - $ping - Check if the bot is online
+            - $help - Show this message
+            - $draw [prompt] - Generate an image
+            - $redraw [prompt] - Generate a variation of last image
+            - $prompt [prompt] - Use Magic Prompt to generate a variation of the prompt
+            - $wait - See current wait time
+            """
+            await message.channel.send(msg)
+        
+        if message.content.startswith('$draw'):
+            msg = message.content[6:]
+            if msg == '':
+                await message.channel.send(f'Please provide a prompt.')
+                return
+            
+            # pickle the prompt for use with the $redraw command
+            with open('prompt.pickle', 'wb') as f:
+                pickle.dump(msg, f)
+
+            # TODO: send estimated time to generate
+            filename, time_elapsed = make_image(pipe, msg)
+            image = open(f'output/{filename}', 'rb')
+            image = discord.File(image, filename=f'output/{filename}')
+
             embed = discord.Embed()
-            with open('test.png', 'rb') as f:
-                picture = discord.File(f)
-                embed.set_image(url='attachment://test.png')
-                await message.channel.send(file=picture, embed=embed, content=f'Hello {msg}!')
+            embed.set_image(url=f'attachment://{filename}')
 
+            await message.channel.send(file=image, embed=embed, content=f'Time to generate: {time_elapsed}')
+                
         if message.content.startswith('$prompt'):
             msg = message.content[8:]
             if msg == '':
@@ -44,7 +82,7 @@ def main():
                 return
 
             variation = enhance_prompt(msg, tokenizer, model)
-            await message.channel.send(f'Here are some variations on your prompt:) {variation}')
+            await message.channel.send(f'New prompt: {variation}')
 
     client.run(TOKEN)
 
@@ -118,8 +156,61 @@ def enhance_prompt(prompt, tokenizer, model):
     # return the first variation
     return variations[0]
 
-def make_image():
+def make_image(pipe, prompt):
+    """
+    Generate an image using the Stable Diffusion model.
+
+    @param pipe StableDiffusionPipeline
+    @param prompt string
+    @return tuple(string, string)
+    """
     start_time = time.time()
+
+    # Empty the output directory
+    #
+    # We do this to prevent the script from running out of disk space.
+    for file in os.listdir('output'):
+        os.remove(f'output/{file}')
+
+    # First-time "warmup" pass
+    #
+    # This is necessary to get the model to run on Apple Silicon (M1/M2). There is a
+    # bug in the MPS implementation of the model that causes it to crash on the first
+    # pass. This is a workaround to get the model to run on Apple Silicon.
+    #
+    # It takes about 30 seconds to run.
+    _ = pipe(prompt, num_inference_steps = NUM_INFERENCE_STEPS)
+
+    # Generate the image
+    image = pipe(
+        prompt, 
+        num_images_per_prompt = 1, 
+        height = HEIGHT,
+        width = WIDTH).images[0]
+    
+    # Calculate the time elapsed
+    end_time = time.time()
+    hours, rem = divmod(end_time - start_time, 3600)
+    minutes, seconds = divmod(rem, 60)
+    time_elapsed = "{:0>2}:{:0>2}:{:05.2f}".format(int(hours), int(minutes), seconds)
+
+    # Save the image
+    epoch_time = int(time.time()) # 10 characters (until the year 2286)
+    prompt = prompt.replace(" ", "_")
+    prompt = prompt[:220]
+
+    filename = "{}_{}".format(epoch_time, prompt)
+    if not os.path.exists('output'):
+        os.makedirs('output')
+
+    # remove any / or . from file name
+    filename = filename.replace("/", "_")
+    filename = filename.replace(".", "_")
+    filename = filename + ".png"
+
+    image.save('output/' + filename)
+
+    return filename, time_elapsed
 
 if __name__ == '__main__':
     main()
